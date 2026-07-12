@@ -29,8 +29,8 @@ class CrashResult(BaseModel):
     method: str
     path: str
     status_code: int
-    payload: dict
-    curl_command: str
+    payload: Optional[str] = None
+    curl_command: Optional[str] = None
 
 class StatusResponse(BaseModel):
     task_id: str

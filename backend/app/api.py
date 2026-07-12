@@ -111,7 +111,8 @@ async def get_status(task_id: str):
             )
 
         elif result.state == 'SUCCESS':
-            data = result.result or {}
+            # Safely handle the data; if result.result is None, use an empty dict
+            data = result.result if result.result is not None else {}
             return StatusResponse(
                 task_id=task_id,
                 status=TaskStatus.SUCCESS,
