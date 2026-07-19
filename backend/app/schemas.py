@@ -41,6 +41,7 @@ class StatusResponse(BaseModel):
     crashes: List[CrashResult] = []
     curl_commands: List[str] = []
     message: str = ""
+    logs: Optional[str] = ""
     error: Optional[str] = None
 
 class FuzzerConfig(BaseModel):

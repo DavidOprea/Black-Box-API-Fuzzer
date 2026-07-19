@@ -121,6 +121,7 @@ async def get_status(task_id: str):
                 total_crashes=data.get('total_crashes', 0),
                 crashes=[CrashResult(**c) for c in data.get('crashes', [])],
                 curl_commands=data.get('curl_commands', []),
+                logs="",
                 message=f"Fuzzing complete: {data.get('total_crashes', 0)} crashes found"
             )
 
@@ -133,6 +134,21 @@ async def get_status(task_id: str):
                 total_crashes=0,
                 error=str(result.info),
                 message="Fuzzing failed"
+            )
+    
+        elif result.state == 'PROGRESS':
+            # This catches the self.update_state(state='PROGRESS', ...) from worker.py
+            meta = result.info or {}
+            return StatusResponse(
+                task_id=task_id,
+                status=TaskStatus.RUNNING, # Tells the UI we are still going
+                progress_percent=0,        # Safe to hardcode to 0 now
+                total_tests_run=meta.get('total_tests_run', 0),
+                total_crashes=meta.get('total_crashes', 0),
+                crashes=[],                # Crashes are parsed at the end
+                curl_commands=[],  
+                logs=meta.get('logs', ''),      
+                message="Fuzzing in progress..."
             )
 
         else:

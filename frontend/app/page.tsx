@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import FuzzerForm from "@/components/FuzzerForm";
-import ProgressBar from "@/components/ProgressBar";
+import TestCounter from "@/components/TestCounter";
 import TerminalOutput from "@/components/TerminalOutput";
 import Dashboard from "@/components/Dashboard";
 import { validateTarget, submitFuzzJob, getJobStatus, cancelJob } from "@/lib/api";
@@ -16,6 +16,7 @@ export default function Home() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [terminalLines, setTerminalLines] = useState<string[]>([]);
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+  // const lastLogCountRef = useRef<number>(0);
 
   // Submit fuzzing job
   const handleSubmitJob = async (request: FuzzRequest) => {
@@ -63,23 +64,39 @@ export default function Home() {
       const response = await getJobStatus(id);
       setStatus(response);
 
-      // Update terminal
-      if (response.total_tests_run > 0 && response.total_tests_run % 50 === 0) {
-        setTerminalLines((prev) => [
-          ...prev,
-          `[*] Progress: ${response.progress_percent}% - ${response.total_tests_run} tests run, ${response.total_crashes} crashes found`,
+      if (response.logs) {
+        const realLogLines = response.logs.split("\n").filter(line => line.trim() !== "");
+        
+        setTerminalLines([
+          `[*] Fuzzing job submitted: ${id}`,
+          `[*] Waiting for fuzzing to start...`,
+          ...realLogLines
         ]);
-      }
+      } else {
+        // Fallback progress indicator if logs haven't initialized yet
+        setTerminalLines((prev) => {
+          if (prev.some(l => l.includes("Progress:"))) return prev;
+          return [
+            ...prev,
+            `[*] Progress: ${response.total_tests_run} operations mapped...`
+          ];
+        });
+      } 
 
-      // Check if complete
       if (response.status === TaskStatus.SUCCESS) {
         setAppState("complete");
-        setTerminalLines((prev) => [
-          ...prev,
-          `[✓] Fuzzing complete!`,
-          `[✓] Total tests: ${response.total_tests_run}`,
-          `[✓] Crashes found: ${response.total_crashes}`,
-        ]);
+        
+        if (response.logs) {
+          const finalLogLines = response.logs.split("\n").filter(line => line.trim() !== "");
+          setTerminalLines([
+            `[*] Fuzzing job submitted: ${id}`,
+            ...finalLogLines,
+            `[✓] Fuzzing complete!`,
+            `[✓] Total operations reported: ${response.total_tests_run}`,
+            `[✓] Total target crashes found: ${response.total_crashes}`,
+          ]);
+        }
+
         if (pollInterval) clearInterval(pollInterval);
       } else if (response.status === TaskStatus.FAILED) {
         setAppState("error");
@@ -150,11 +167,8 @@ export default function Home() {
               </button>
             </div>
 
-            <ProgressBar
-              progress={status.progress_percent}
-              status={status.status}
-              testCount={status.total_tests_run}
-              crashCount={status.total_crashes}
+            <TestCounter
+              count={status.total_tests_run}
             />
 
             <TerminalOutput

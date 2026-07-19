@@ -22,6 +22,7 @@ export interface StatusResponse {
   crashes: CrashResult[];
   curl_commands: string[];
   message: string;
+  logs?: string;
   error?: string;
 }
 

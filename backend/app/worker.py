@@ -7,36 +7,62 @@ celery_app = Celery("fuzzer_tasks", broker="redis://redis:6379/0", backend="redi
 @celery_app.task(bind=True)
 def fuzz_api_task(self, target_openapi_url: str, header_name=None, header_value=None):
     # 1. Build the base command
-    cmd = ["schemathesis", "run", target_openapi_url, "--checks", "not_a_server_error"]
+    cmd = ["schemathesis", "run", target_openapi_url, 
+           "--checks", "not_a_server_error", 
+           "--workers" , "4",
+           "--no-color"]
     
     # 2. If the user provided an API key, inject it into the CLI command
     if header_name and header_value:
         cmd.extend(["-H", f"{header_name}: {header_value}"])
     
     # 3. Execute
-    process = subprocess.run(cmd, capture_output=True, text=True)
-    output = process.stdout + process.stderr
-
-    # NEW: 4. Parse Total Tests dynamically from the summary line
-    total_tests = 0
-    # Look for the final summary line surrounded by equal signs
-    summary_match = re.search(r"={3,}([^=]+)={3,}", output)
+    process = subprocess.Popen(cmd, 
+                               stdout=subprocess.PIPE, 
+                               stderr=subprocess.STDOUT, 
+                               text=True,
+                               bufsize=1)
     
-    if summary_match:
-        summary_str = summary_match.group(1)
-        # Find all numbers preceding standard test outcome keywords
-        counts = re.findall(r"(\d+)\s+(?:passed|failed|errored|skipped|xfailed|xpassed)", summary_str)
-        # Sum them all up to get the true total
-        total_tests = sum(int(c) for c in counts)
-        
+    full_output = []
+    tests_completed = 0
+
+    for line in iter(process.stdout.readline, ''):
+        full_output.append(line)
+
+        # 2. Look for numbers followed by passed/failed/error/skipped 
+        # Example match: [('5', 'passed'), ('3', 'failed')]
+        stats = re.findall(r"(\d+)\s+(passed|failed|error|skipped)", line.lower())
+
+        if stats:
+            # Extract just the markers block and count its length
+            line_total = sum(int(count) for count, status in stats)
+            tests_completed += line_total
+            
+            # Broadcast to frontend
+            self.update_state(
+                state='PROGRESS',
+                meta={
+                    'total_tests_run': tests_completed,
+                    'total_crashes': 0, 
+                    'status': 'RUNNING',
+                    'logs': "".join(full_output)
+                }
+            )
+    
+    process.stdout.close()
+    process.wait()
+
+    output_std = "".join(full_output)
+
     # Fallback just in case the fuzzer crashes entirely and prints no summary
+    total_tests = tests_completed
     if total_tests == 0:
         total_tests = "Unknown (Crash)"
-    
-    # 5. Parse (Regex to find curl commands)
-    raw_curl_blocks = re.findall(r"(curl -X .*?)(?=\n\n|\Z)", output, re.DOTALL)
 
-    # 6. Clean the commands and extract metadata
+    # 4. Parse (Regex to find curl commands)
+    raw_curl_blocks = re.findall(r"(curl -X .*?)(?=\n\n|\Z)", output_std, re.DOTALL)
+
+    # 5. Clean the commands and extract metadata
     crashes = []
     clean_curls = []
 
