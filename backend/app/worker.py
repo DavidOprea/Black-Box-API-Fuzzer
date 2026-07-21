@@ -3,13 +3,18 @@ import re
 from celery import Celery
 
 celery_app = Celery("fuzzer_tasks", broker="redis://redis:6379/0", backend="redis://redis:6379/0")
+NUM_WORKERS = 4
+MAX_EXAMPLES = 100
+MODE = "all"
 
 @celery_app.task(bind=True)
 def fuzz_api_task(self, target_openapi_url: str, header_name=None, header_value=None):
     # 1. Build the base command
     cmd = ["schemathesis", "run", target_openapi_url, 
            "--checks", "not_a_server_error", 
-           "--workers" , "4",
+           "--workers" , f"{NUM_WORKERS}",
+           "--max-examples", f"{MAX_EXAMPLES}", 
+           "--mode", f"{MODE}",         
            "--no-color"]
     
     # 2. If the user provided an API key, inject it into the CLI command
